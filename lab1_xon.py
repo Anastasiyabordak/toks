@@ -1,4 +1,5 @@
 import sys
+import time
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QWidget, QLabel, QLineEdit,QTextEdit
 from PyQt5.QtWidgets import QPushButton,QComboBox,QRadioButton
@@ -14,26 +15,33 @@ def read_from_port(widget, label,serial_com,xonLabel, sendButton, addressMyDist)
 		if serial_com.is_open and serial_com.port != 'COM':
                         try:
                             output = serial_com.read(serial_com.inWaiting())
+                            
                             if len(output) > 0 :
                                 if  serial_com.xonxoff == False:
-                                        xonLabel.setText("")
-                                        for i in output:
-                                            print(i)
-                                        if output != b'@' and output != b'#' and chr(output[0]) == "a" and addressMyDist[0] == chr(output[1]) and addressMyDist[1] ==  chr(output[2]):
-                                            recieve_counter += len(output)
+                                        xonLabel.setText("")                                       
+                                        if output != b'@' and output != b'#':
+                                                #and chr(output[0]) == "a" and addressMyDist[0] == chr(output[1]) and addressMyDist[1] ==  chr(output[2]):
                                             output = bytearray(output)
-                                            print("output[3]", output[3])
-                                            range_number = list(range(4, output[3] + 4))
+                                            recieve_counter += len(output)
+                                            result = []                                           
+                                            range_number = list(range(1, len(output) - 1))
                                             for i in range_number:
                                                 if output[i] == 27:
-                                                    #output = output[:i] + output[i+1:]
                                                     output[i+1] -= 8
+                                                    #output = output[:i] + output[i+1:]                                                    
                                                     #range_number.pop()
                                                 else:
-                                                    widget.insertPlainText(chr(output[i]))
-                                                
-                                            widget.insertPlainText("\n")
-                                            label.setText("R: " + str(recieve_counter))
+                                                    result.append(chr(output[i]))
+                                            if addressMyDist[0] == result[0] and addressMyDist[1] == result[1]:
+                                               #print(ord(result[2]))
+                                               #print(result)
+                                               print(result[3:3+ord(result[2])])
+                                               if ord(result[2]) > 0:
+                                                   for i in result[3:(3+ord(result[2]))]:
+                                                        widget.addOutput(i)
+                                                        time.sleep(0.1)
+                                               widget.addOutput("\n")
+                                               label.setText("R: " + str(recieve_counter))
                                             xonLabel.setText("")
                                         elif output == b'@':
                                             xonLabel.setText("XOFF from reciever")
@@ -140,27 +148,33 @@ class MainWindow(QMainWindow):
         self.debugState.resize(355, 70)
         
     def clickMethod(self):
+
         if self.serial_com.is_open:
+                
                 self.xonLabel.setText("")
                 self.errorLabel.setText("")
                 if len(self.line.toPlainText()) < 255:
-                        transmit_data = bytearray(self.line.toPlainText(), 'utf-8')
-                        range_number = list(range(len(transmit_data)))
-                        for i in range_number:
-                            if transmit_data[i] == ord('#') or transmit_data[i] == ord('@'):
-                                transmit_data.insert(i, 27)
-                                transmit_data[i+1] += 8
-                                range_number.insert(len(range_number), len(range_number))
+                        try:
+                            transmit_data = bytearray(self.line.toPlainText(), 'utf-8')
+                            transmit_data = bytearray(self.addressMyDist[1], 'utf-8') + bytearray(self.addressMyDist[0], 'utf-8') + bytearray([len(transmit_data)]) + transmit_data + bytearray(self.addressMyDist[0], 'utf-8')
+                            range_number = list(range(len(transmit_data)))
+                            for i in range_number:
+                                if transmit_data[i] == ord('#') or transmit_data[i] == ord('@'):
+                                    transmit_data.insert(i, 27)
+                                    transmit_data[i+1] += 8
+                                    range_number.insert(len(range_number), len(range_number))
                                 
-                        self.line.clear()                        
-                        self.transmit_counter += len(transmit_data) + 6 
-                        self.transmitLabel.setText("T: " + str(self.transmit_counter))
-                        send_total = bytearray("a", 'utf-8') + bytearray(self.addressMyDist[1], 'utf-8') + bytearray(self.addressMyDist[0], 'utf-8') + bytearray([len(transmit_data)]) + transmit_data + bytearray(self.addressMyDist[0], 'utf-8') + bytearray([255])
-                        self.serial_com.write(send_total)
-                        for i in send_total:
-                               self.debugState.insertPlainText(str(hex(i))) 
-                        self.debugState.insertPlainText("\n") 
-                        #self.line.clear()
+                            self.line.clear()                        
+                            self.transmit_counter += len(transmit_data) + 2 
+                            self.transmitLabel.setText("T: " + str(self.transmit_counter))
+                            send_total = bytearray("a", 'utf-8') + transmit_data + bytearray([255])
+                            self.serial_com.write(send_total)
+                            for i in send_total:
+                                   self.debugState.insertPlainText(str(hex(i))) 
+                            self.debugState.insertPlainText("\n")
+                        except Exception as e:
+                            print("have exception")
+                            print(e)
                 else:
                         self.errorLabel.setText("Max size for sending")
         else:
@@ -184,7 +198,7 @@ class MainWindow(QMainWindow):
                 self.errorLabel.setText("Select port")
                 return
 
-        self.serial_com.port = 'COM' + self.comInput.currentText()[3]
+        self.serial_com.port = '/dev/pts/' + self.comInput.currentText()[3]
         if self.comState.currentText() == "Open port":
                 try:
                         self.serial_com.open()
@@ -205,6 +219,9 @@ class MainWindow(QMainWindow):
             else:
                     self.errorLabel.setText("Can't set address")
             return
+    def addOutput(self, data):
+        self.output.insertPlainText(data)
+        
     def selectionChangeState(self):
 
         self.errorLabel.setText("")
@@ -213,7 +230,7 @@ class MainWindow(QMainWindow):
                 self.serial_com.port = 'COM'
         elif self.comState.currentText() == "Open port" and self.serial_com.is_open == False:	
                 try:
-                       self.serial_com.port = 'COM' + self.comInput.currentText()[3]
+                       self.serial_com.port = '/dev/pts/' + self.comInput.currentText()[3]
                        self.serial_com.open()
 
                 except Exception:
@@ -223,6 +240,7 @@ class MainWindow(QMainWindow):
                         self.errorLabel.setText("Can't open this port")
         elif self.comState.currentText() == "Open port" and self.serial_com.is_open == True:
                         self.errorLabel.setText("Can't open this port")
+
 	  
 if __name__ == "__main__":
 
@@ -232,14 +250,13 @@ if __name__ == "__main__":
     serial_com.parity = serial.PARITY_NONE
     serial_com.stopbits = serial.STOPBITS_ONE
     serial_com.xonxoff = False
-
-
+    
     app = QtWidgets.QApplication(sys.argv)
     mainWin = MainWindow(serial_com)
-
-
-    thread = threading.Thread(target=read_from_port, args = (mainWin.output,mainWin.recieveLabel, serial_com, mainWin.xonLabel, mainWin.pybutton,
-                                                             mainWin.addressMyDist))    
+    #temp = mainWin.addOutput
+    thread = threading.Thread(target=read_from_port, args = (mainWin,mainWin.recieveLabel, serial_com, mainWin.xonLabel, mainWin.pybutton,
+                                                            mainWin.addressMyDist))    
+    
     mainWin.show()
     thread.start()
   
